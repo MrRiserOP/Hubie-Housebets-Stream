@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# hubie — tiny helper for running Hubie on a server.
+#   hubie status | logs | restart | stop | start | link | set-key [anthropic|elevenlabs|openai] | estop | resume | update
+APP_USER=hubie
+APP_DIR="${HUBIE_DIR:-/home/$APP_USER/hubie-streamer}"
+[ -d "$APP_DIR" ] || APP_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+as_app() { if [ "$(id -un)" = "$APP_USER" ]; then bash -lc "cd '$APP_DIR' && $*"; else sudo -u $APP_USER -H bash -lc "cd '$APP_DIR' && $*"; fi; }
+PORT="$(grep -E '^CONTROLLER_PORT=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2)"; PORT="${PORT:-8787}"
+
+case "${1:-help}" in
+  status)  as_app "pm2 status"; curl -fs "http://127.0.0.1:$PORT/api/health" | (command -v jq >/dev/null && jq '{started, estop, components: [.components[] | {name, state, detail}]}' || cat) ;;
+  logs)    as_app "pm2 logs --lines 100" ;;
+  restart) as_app "pm2 restart all" ;;
+  stop)    as_app "pm2 stop all" ;;
+  start)   as_app "pm2 start config/ecosystem.config.cjs && pm2 save" ;;
+  link)    cat "/home/$APP_USER/hubie-setup-link.txt" 2>/dev/null || echo "http://<server-ip>:$PORT/setup?token=$(grep -E '^CONTROL_TOKEN=' "$APP_DIR/.env" | cut -d= -f2)" ;;
+  set-key)
+    WHICH="${2:-}"; [ -n "$WHICH" ] || { printf "Which key? [anthropic/elevenlabs/openai]: "; read -r WHICH; }
+    case "$WHICH" in
+      anthropic) NAME=ANTHROPIC_API_KEY; RE='^sk-ant-[A-Za-z0-9_-]{20,}$' ;;
+      elevenlabs) NAME=ELEVENLABS_API_KEY; RE='^sk_[A-Za-z0-9_-]{20,}$' ;;
+      openai)    NAME=OPENAI_API_KEY;    RE='^sk-[A-Za-z0-9_-]{20,}$' ;;
+      *) echo "usage: hubie set-key anthropic|elevenlabs|openai"; exit 1 ;;
+    esac
+    printf "Paste your %s key (hidden): " "$WHICH"; IFS= read -rs KEY; echo
+    [[ "$KEY" =~ $RE ]] || { echo "That doesn't look like a $WHICH key."; exit 1; }
+    F="$APP_DIR/.env"
+    if grep -qE "^$NAME=" "$F"; then sed -i "s|^$NAME=.*|$NAME=$KEY|" "$F"; else echo "$NAME=$KEY" >> "$F"; fi
+    chmod 600 "$F"; unset KEY
+    as_app "pm2 restart controller" >/dev/null && echo "Key saved and Hubie restarted. Check it in the control center (section A → Test)." ;;
+  estop)   as_app "npm run --silent estop" ;;
+  resume)  as_app "npm run --silent estop -- off" ;;
+  update)  as_app "git pull --ff-only && npm ci --no-audit --no-fund && npm run build && pm2 restart all" ;;
+  *) echo "usage: hubie status | logs | restart | stop | start | link | set-key anthropic|elevenlabs|openai | estop | resume | update" ;;
+esac

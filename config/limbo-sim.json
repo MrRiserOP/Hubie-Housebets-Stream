@@ -1,0 +1,18 @@
+{
+  "_readme": "Simulated Limbo — ENTERTAINMENT ONLY. These weights are NOT Housebets' odds, RTP or payout rules. Edit here or in the Control Center (section 3). Weights are relative (they don't need to add up to 100).",
+  "label": "Limbo",
+  "roundDelaySec": 8,
+  "currency": "demo credits",
+  "startingCredits": 1000,
+  "betAmount": 10,
+  "targetMode": "auto",
+  "fixedTarget": 2,
+  "resultCap": 10000,
+  "outcomes": [
+    { "id": "small_win",  "label": "small win",       "weight": 38, "win": true,  "targets": [1.2, 1.5, 1.8, 2] },
+    { "id": "medium_win", "label": "medium win",      "weight": 22, "win": true,  "targets": [2.5, 3, 4, 5] },
+    { "id": "large_win",  "label": "large win",       "weight": 9,  "win": true,  "targets": [7, 10, 15, 20] },
+    { "id": "huge_win",   "label": "rare huge win",   "weight": 2,  "win": true,  "targets": [25, 50, 100] },
+    { "id": "loss",       "label": "loss",            "weight": 29, "win": false, "targets": [1.5, 2, 3, 5, 10] }
+  ]
+}

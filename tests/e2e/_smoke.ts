@@ -1,0 +1,18 @@
+import { chromium } from 'playwright';
+import { BASE, baseEnv, startProc, stopAll, waitFor, health, api, logTail } from './harness.ts';
+const env = baseEnv({ AUTO_START: 'true', GAME_ADAPTER: 'limbo-sim', ROUND_INTERVAL_SEC: '3' });
+startProc('controller', 'apps/controller/src/main.ts', env);
+await waitFor('up', () => health().then((h) => h.ok), 20000);
+startProc('game-agent', 'apps/game-agent/src/main.ts', env);
+await waitFor('rounds', async () => (await health()).stats.rounds >= 3, 60000).catch(() => {});
+console.log(JSON.stringify((await api('/api/game')).status?.limbo?.history?.slice(-3).map((r: any) => [r.targetMultiplier, r.resultMultiplier, r.outcome, r.payoutMultiplier])));
+console.log(logTail('game-agent', 8));
+const b = await chromium.launch({ executablePath: '/usr/bin/google-chrome' });
+const p = await b.newPage({ viewport: { width: 1920, height: 1080 } });
+await p.goto(`${BASE}/overlay`); await p.waitForTimeout(6000);
+await p.screenshot({ path: '/tmp/ov.png' });
+const g = await b.newPage({ viewport: { width: 1280, height: 720 } });
+await g.goto(`${BASE}/limbo-sim/index.html?driven=1`); await g.waitForTimeout(1000);
+await g.evaluate(() => (window as any).limbo.show({ roundNumber: 7, targetMultiplier: 10, resultMultiplier: 23.45, outcome: 'win', payoutMultiplier: 10, bet: 10, payout: 100, profit: 90, balanceAfter: 1090 }));
+await g.waitForTimeout(300); await g.screenshot({ path: '/tmp/game.png' });
+await b.close(); stopAll(); process.exit(0);

@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+// STAND-IN for cloudflared (NOT Cloudflare). Prints a quick-tunnel style address and stays alive, like the real thing.
+// FAKE_CF_EXIT_AFTER_MS makes it exit (to test recovery); every start prints a NEW address, like real quick tunnels.
+if (process.argv.includes('--version')) { console.log('cloudflared version 0.0.0-fake'); process.exit(0); }
+const name = `fake-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+console.error(`2026-11-14T10:00:00Z INF Requesting new quick Tunnel on trycloudflare.com...`);
+console.error(`2026-11-14T10:00:01Z INF |  https://${name}.trycloudflare.com  |`);
+const ms = Number(process.env.FAKE_CF_EXIT_AFTER_MS || 0);
+if (ms) setTimeout(() => process.exit(1), ms);
+setInterval(() => {}, 1 << 30);

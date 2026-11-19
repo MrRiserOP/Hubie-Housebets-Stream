@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Limbo</title>
+<!--
+  Hubie's Limbo. Layout modelled on the Housebets Limbo screen (left control panel with Manual/Auto/Advanced,
+  big multiplier, target pill, "Payout on Win"), implemented from scratch — no Housebets code, assets, servers
+  or accounts. Rounds come from a local random engine (engine.js); no real money.
+  ?driven=1 → Hubie's game agent plays; otherwise you can play it yourself.
+-->
+<style>
+  :root {
+    --page: #0b171e; --panel: #0e1c24; --field: #0c1a21; --field-border: #1b2f3a; --chip: #10232c; --chip-border: #1d3542;
+    --zone: #10202b; --text: #f1f6f8; --muted: #9aa9b1; --cyan: #2bd4d4; --bet: #a4e5e5; --bet-hover: #b8eded; --ink: #041015;
+    --win: #6dce82; --win-soft: rgba(109,206,130,.14); --win-border: rgba(109,206,130,.32);
+    --lose: #e04949; --gold: #ffe016; --gold-soft: rgba(255,224,22,.14); --gold-border: rgba(255,224,22,.28);
+    --idle: #8a96a6;
+    --font: "Figtree", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --display: "Red Hat Display", "Figtree", "Inter", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--page); color: var(--text); font-family: var(--font); -webkit-font-smoothing: antialiased; }
+  body { display: grid; grid-template-columns: 330px 1fr; overflow: hidden; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* ---------- control panel ---------- */
+  .panel { background: var(--panel); padding: 0 22px 22px; display: flex; flex-direction: column; gap: 18px; overflow: hidden; }
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--field-border); }
+  .tabs button { height: 58px; border: 0; background: none; color: var(--muted); font-size: 15px; font-weight: 600; position: relative; }
+  .tabs button.on { color: var(--text); }
+  .tabs button.on::after { content: ''; position: absolute; left: 22%; right: 22%; bottom: -1px; height: 2px; border-radius: 2px; background: var(--cyan); }
+  .lbl { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; font-size: 14px; font-weight: 700; }
+  .lbl span:last-child { font-weight: 500; color: var(--muted); }
+  .inp { display: flex; align-items: center; gap: 8px; height: 50px; padding: 0 8px 0 14px; border-radius: 8px; background: var(--field); border: 1px solid var(--field-border); }
+  .inp input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--text); font: 600 17px var(--font); font-variant-numeric: tabular-nums; }
+  .inp input.dim { color: var(--muted); }
+  .coin { width: 18px; height: 18px; border-radius: 50%; flex: none; display: inline-grid; place-items: center; background: linear-gradient(#53be70, #026a2e); color: #e8ffe9; font: 800 11px var(--font); }
+  .suf { color: var(--muted); font-size: 15px; padding-right: 10px; display: flex; }
+  .suf svg { width: 18px; height: 18px; }
+  .mini { height: 34px; min-width: 34px; padding: 0 9px; border-radius: 6px; border: 0; background: var(--chip); color: var(--text); font-weight: 700; font-size: 14px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .row2 > div { min-width: 0; }
+  .inp input { width: 100%; }
+  .quick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .quick button { height: 34px; border-radius: 8px; border: 1px solid var(--chip-border); background: var(--chip); color: var(--text); font-weight: 700; font-size: 14px; }
+  .quick button.on { border-color: var(--cyan); background: rgba(43,212,212,.1); }
+  .bet { height: 52px; border: 0; border-radius: 8px; background: var(--bet); color: var(--ink); font: 700 17px var(--font); transition: background .12s; }
+  .bet:hover { background: var(--bet-hover); }
+  .bet.busy { opacity: .85; }
+  .view { display: none; flex-direction: column; gap: 18px; }
+  .view.on { display: flex; }
+  .note { color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+  /* ---------- game zone ---------- */
+  .zone { position: relative; display: grid; grid-template-rows: 1fr auto; overflow: hidden; isolation: isolate; background: var(--zone); }
+  .chips { position: absolute; top: 18px; right: 18px; display: flex; flex-direction: row-reverse; gap: 6px; max-width: calc(100% - 36px); overflow: hidden; }
+  .chip { flex: 0 0 auto; min-width: 66px; height: 32px; padding: 0 12px; display: grid; place-items: center; border-radius: 999px; border: 1px solid #22404d; background: #0f2530; color: var(--muted); font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .chip.win { background: var(--win-soft); border-color: var(--win-border); color: var(--win); }
+  .chip.gold { background: var(--gold-soft); border-color: var(--gold-border); color: var(--gold); }
+  .chip.in { animation: chipin .26s cubic-bezier(.2,.9,.3,1.2); }
+  @keyframes chipin { from { transform: translateX(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .stage { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding-top: 40px; }
+  .num { display: flex; align-items: baseline; font: 700 172px/1 var(--display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--idle); white-space: nowrap; transition: color .12s; }
+  .num small { font-size: .5em; margin-left: 2px; }
+  body[data-state=live] .num { color: #f4f8fa; }
+  body[data-state=win] .num { color: var(--win); }
+  body[data-state=gold] .num { color: var(--gold); text-shadow: 0 0 .3em rgba(255,224,22,.25); }
+  body[data-state=lose] .num { color: var(--lose); }
+  .num.pop { animation: pop .26s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes pop { 45% { transform: scale(1.055); } }
+  .target { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid #1f3946; background: #0f2530; font-size: 14px; color: var(--muted); }
+  .target b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+  body[data-state=win] .target { border-color: var(--win-border); background: var(--win-soft); }
+  body[data-state=win] .target b { color: var(--win); }
+  body[data-state=gold] .target { border-color: var(--gold-border); background: var(--gold-soft); }
+  body[data-state=gold] .target b { color: var(--gold); }
+  .foot { display: flex; justify-content: center; align-items: center; gap: 10px; padding: 16px 24px 30px; font-size: 15px; color: var(--muted); }
+  .foot b { color: var(--text); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 6px; }
+  .burst { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+  .burst i { position: absolute; left: 50%; top: 42%; width: 9px; height: 9px; border-radius: 2px; animation: fly 1s ease-out forwards; }
+  @keyframes fly { to { transform: translate(var(--dx), var(--dy)) rotate(540deg); opacity: 0; } }
+</style>
+</head>
+<body data-state="idle">
+  <aside class="panel">
+    <div class="tabs"><button data-tab="manual" class="on">Manual</button><button data-tab="auto">Auto</button><button data-tab="advanced">Advanced</button></div>
+
+    <div>
+      <div class="lbl"><span>Bet Amount</span><span id="betSide">0.00000000 USDT</span></div>
+      <div class="inp"><span class="coin">$</span><input id="betIn" inputmode="decimal" value="$0.00" aria-label="Bet Amount" /><button class="mini" id="half">½</button><button class="mini" id="dbl">2×</button></div>
+    </div>
+    <div class="row2">
+      <div><div class="lbl"><span>Multiplier</span></div>
+        <div class="inp"><input id="targetIn" inputmode="decimal" value="2.00" aria-label="Target Multiplier" /><span class="suf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg></span></div></div>
+      <div><div class="lbl"><span>Win Chance</span></div>
+        <div class="inp"><input id="chanceIn" readonly value="49.50" aria-label="Win chance, percent" /><span class="suf">%</span></div></div>
+    </div>
+    <div class="quick" id="quick"><button>1.5x</button><button class="on">2x</button><button>5x</button><button>10x</button><button>100x</button></div>
+
+    <div class="view on" data-view="manual">
+      <button class="bet" id="betBtn">Bet</button>
+      <div><div class="lbl"><span>Profit on Win</span></div><div class="inp"><span class="coin">$</span><input id="profitOnWin" readonly value="$0.00" aria-label="Profit on Win" /></div></div>
+    </div>
+    <div class="view" data-view="auto">
+      <div><div class="lbl"><span>Number of Bets</span></div><div class="inp"><input id="numBets" value="∞" aria-label="Number of bets" /></div></div>
+      <button class="bet" id="autoBtn">Start Autobet</button>
+    </div>
+    <div class="view" data-view="advanced">
+      <p class="note">Advanced strategies aren't available here. Use Manual or Auto.</p>
+    </div>
+  </aside>
+
+  <section class="zone" aria-label="Game zone">
+    <div class="chips" id="chips" aria-label="Recent results"></div>
+    <div class="stage">
+      <div class="num" id="num" role="status" aria-live="polite"><span id="val">1.00</span><small>x</small></div>
+      <div class="target">Target <b id="targetVal">2.00x</b></div>
+    </div>
+    <div class="foot"><span id="footLbl">Payout on Win</span><b><span class="coin">$</span><span id="payout">0.00</span> $</b></div>
+    <div class="burst" id="burst"></div>
+  </section>
+<script src="engine.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const driven = new URLSearchParams(location.search).has('driven');
+  const fmt = (n) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const state = { settings: null, engine: null, roundNumber: 0, balance: 1000, playing: false, auto: false, timer: 0, bet: 0, target: 2, chance: 0.495 };
+
+  function render() {
+    $('betIn').value = `$${fmt(state.bet)}`;
+    $('betIn').classList.toggle('dim', !state.bet);
+    $('betSide').textContent = `${state.bet.toFixed(8)} USDT`;
+    $('targetIn').value = state.target.toFixed(2);
+    $('targetVal').textContent = `${state.target.toFixed(2)}x`;
+    const eng = state.settings && window.LimboSim ? new LimboSim.LimboEngine(state.settings) : null;
+    $('chanceIn').value = ((eng ? eng.winChanceFor(state.target) : state.chance) * 100).toFixed(2);
+    for (const b of $('quick').children) b.classList.toggle('on', parseFloat(b.textContent) === state.target);
+    $('profitOnWin').value = `$${fmt(state.bet * state.target - state.bet)}`;
+    $('payout').textContent = fmt(state.bet * state.target);
+  }
+  function setTarget(t) { state.target = Math.max(1.01, Math.min(1000, Math.round(Number(t) * 100) / 100 || 2)); render(); }
+  function setBet(b) { state.bet = Math.max(0, Math.round(Number(String(b).replace(/[^0-9.]/g, '')) * 100) / 100 || 0); render(); }
+
+  function burst(gold) {
+    const box = $('burst');
+    for (let i = 0; i < (gold ? 64 : 30); i++) {
+      const el = document.createElement('i');
+      const a = Math.random() * Math.PI * 2, d = 150 + Math.random() * 340;
+      el.style.setProperty('--dx', `${Math.cos(a) * d}px`); el.style.setProperty('--dy', `${Math.sin(a) * d - 70}px`);
+      el.style.background = gold ? ['#ffe016', '#fff3b0', '#ffb547'][i % 3] : ['#6dce82', '#a4e5e5', '#ffffff'][i % 3];
+      box.appendChild(el); setTimeout(() => el.remove(), 1100);
+    }
+  }
+  function addChip(r) {
+    const gold = r.outcome === 'win' && r.targetMultiplier >= 10;
+    const c = document.createElement('div');
+    c.className = `chip in ${r.outcome === 'win' ? (gold ? 'gold' : 'win') : ''}`;
+    c.textContent = `${fmt(r.resultMultiplier)}x`;
+    $('chips').prepend(c);
+    while ($('chips').children.length > 10) $('chips').lastChild.remove();
+  }
+
+  /** Reveal one round. Resolves with what the page now shows (read back from the screen). */
+  function show(r) {
+    return new Promise((resolve) => {
+      state.playing = true;
+      $('betBtn').classList.add('busy');
+      state.bet = r.bet; state.target = r.targetMultiplier; render();
+      document.body.dataset.state = 'live';
+      const end = r.resultMultiplier, dur = Math.min(1500, 650 + Math.log10(end) * 420), t0 = performance.now();
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / dur);
+        const v = p < 1 ? Math.exp(Math.log(end) * (1 - Math.pow(1 - p, 3))) : end;
+        $('val').textContent = fmt(Math.floor(v * 100) / 100);
+        if (p < 1) return requestAnimationFrame(step);
+        $('val').textContent = fmt(end);
+        const gold = r.outcome === 'win' && r.targetMultiplier >= 10;
+        document.body.dataset.state = r.outcome === 'win' ? (gold ? 'gold' : 'win') : 'lose';
+        $('num').classList.remove('pop'); void $('num').offsetWidth; $('num').classList.add('pop');
+        $('footLbl').textContent = r.outcome === 'win' ? 'Payout' : 'Payout on Win';
+        $('payout').textContent = fmt(r.outcome === 'win' ? r.payout : r.bet * r.targetMultiplier);
+        if (r.outcome === 'win') burst(gold);
+        addChip(r);
+        state.roundNumber = r.roundNumber; state.balance = r.balanceAfter;
+        setTimeout(() => { state.playing = false; $('betBtn').classList.remove('busy'); resolve(readBack()); }, 420);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+  const num = (s) => Number(String(s).replace(/[^0-9.]/g, ''));
+  function readBack() {
+    const st = document.body.dataset.state;
+    const outcome = st === 'win' || st === 'gold' ? 'win' : st === 'lose' ? 'loss' : 'unknown';
+    const target = num($('targetVal').textContent);
+    return { resultMultiplier: num($('val').textContent), targetMultiplier: target, outcome, payoutMultiplier: outcome === 'win' ? target : 0, payout: outcome === 'win' ? num($('payout').textContent) : 0 };
+  }
+  function applySettings(s) {
+    state.settings = s;
+    if (window.LimboSim) state.chance = new LimboSim.LimboEngine(s).winShare();
+    if (!driven) setBet(s.betAmount);
+    if (s.targetMode === 'fixed') setTarget(s.fixedTarget); else render();
+  }
+
+  /* ---- API used by Hubie's game agent ---- */
+  window.limbo = {
+    driven,
+    setSettings: (s) => applySettings(s),
+    setState: (s) => { state.roundNumber = s.roundNumber ?? 0; state.balance = s.balance ?? 1000; for (const r of (s.history || []).slice(-10)) addChip(r); },
+    setPaused: () => {},
+    show, readBack,
+  };
+
+  /* ---- tabs ---- */
+  for (const b of document.querySelectorAll('.tabs button')) b.onclick = () => {
+    for (const x of document.querySelectorAll('.tabs button')) x.classList.toggle('on', x === b);
+    for (const v of document.querySelectorAll('.view')) v.classList.toggle('on', v.dataset.view === b.dataset.tab);
+  };
+
+  /* ---- play it yourself ---- */
+  async function playOne() {
+    if (state.playing || !window.LimboSim) return;
+    const s = { ...(state.settings || LimboSim.DEFAULT_SETTINGS), targetMode: 'fixed', fixedTarget: state.target, betAmount: state.bet || 1 };
+    if (!state.engine) state.engine = new LimboSim.LimboEngine(s, undefined, { roundNumber: state.roundNumber, balance: state.balance });
+    state.engine.settings = s;
+    await show(state.engine.next());
+  }
+  function autoLoop() { clearTimeout(state.timer); if (!state.auto) return; playOne().then(() => { state.timer = setTimeout(autoLoop, 1200); }); }
+  if (!driven) {
+    $('betBtn').onclick = playOne;
+    $('autoBtn').onclick = () => { state.auto = !state.auto; $('autoBtn').textContent = state.auto ? 'Stop Autobet' : 'Start Autobet'; autoLoop(); };
+    $('half').onclick = () => setBet(state.bet / 2);
+    $('dbl').onclick = () => setBet(state.bet * 2 || 1);
+    $('betIn').onchange = () => setBet($('betIn').value);
+    $('targetIn').onchange = () => setTarget($('targetIn').value);
+    for (const b of $('quick').children) b.onclick = () => setTarget(parseFloat(b.textContent));
+    fetch(`/api/limbo/settings${location.search}`).then((r) => r.ok ? r.json() : null).then((x) => applySettings((x && x.settings) || LimboSim.DEFAULT_SETTINGS)).catch(() => applySettings(LimboSim.DEFAULT_SETTINGS));
+  }
+  render();
+})();
+</script>
+</body>
+</html>
