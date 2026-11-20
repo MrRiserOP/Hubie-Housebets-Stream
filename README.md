@@ -2,7 +2,7 @@
 
 # 🎩🦥 Hubie Live
 
-### An autonomous AI streamer you can run from a control panel — no code editing required.
+### An autonomous AI streamer you can run from a control panel — no code editing required KICK LIVE STREAM : https://kick.com/quantaragames.
 
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.13-3c873a?logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
